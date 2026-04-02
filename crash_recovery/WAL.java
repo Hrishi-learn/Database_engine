@@ -5,7 +5,7 @@ import java.util.HashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WAL {
-    private final static String wal_log_path = "D:\\wal.log";
+    public final static String wal_log_path = "D:\\wal.log";
 
      public WAL(){
         try {
