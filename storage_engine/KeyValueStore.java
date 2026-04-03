@@ -17,7 +17,7 @@ public class KeyValueStore {
         this.filePath = filePath;
         wal = new WAL();
     }
-    public void put(String key,String value){
+    public void put(String key,String value) throws FileNotFoundException {
         wal.append(key, value);
         cache.put(key,value);
     }
@@ -50,7 +50,7 @@ public class KeyValueStore {
         }
         return value;
     }
-    public void delete(String key){
+    public void delete(String key) throws FileNotFoundException {
         put(key,"_DELETED_");
         System.out.println("Key deleted");
     }

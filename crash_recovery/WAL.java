@@ -21,12 +21,16 @@ public class WAL {
         }
     }
 
-    public void append(String key,String value){
-        try(BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(wal_log_path,true))){
+    public void append(String key,String value) throws FileNotFoundException {
+        FileOutputStream fos = new FileOutputStream(wal_log_path,true);
+        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
+        try{
             bufferedWriter.write(key+":"+value);
             bufferedWriter.newLine();
-        }catch (IOException e){
-            e.printStackTrace();
+            bufferedWriter.flush();
+            fos.getFD().sync();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
     public static void replay(ConcurrentHashMap<String,String> cache){
