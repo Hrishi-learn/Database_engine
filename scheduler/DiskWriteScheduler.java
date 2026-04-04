@@ -15,18 +15,26 @@ public class DiskWriteScheduler {
     public DiskWriteScheduler(){
         service =  Executors.newScheduledThreadPool(1);
     }
-    public void schedule(ConcurrentHashMap<String,String> cache, String filepath){
-        service.scheduleAtFixedRate(()->flush(cache,filepath),50,50, TimeUnit.SECONDS);
+    public void schedule(ConcurrentHashMap<String,String> cache, String filepath, ConcurrentHashMap<String,String>schema){
+        service.scheduleAtFixedRate(()->flush(cache,filepath,schema),300,300, TimeUnit.SECONDS);
     }
-    private void flush(ConcurrentHashMap<String,String>cache,String filepath){
+    private void flush(ConcurrentHashMap<String,String>cache,String filepath,ConcurrentHashMap<String,String>schema){
         /*
           change pending, need to handle the case when app crashes during
           flushing from memory to OS disk.
          */
         try(BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(filepath))){
+            schema.forEach((key,value)->{
+                try {
+                    bufferedWriter.write("schema"+":"+key+":"+value);
+                    bufferedWriter.newLine();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
             cache.forEach((key,value)->{
                 try {
-                    bufferedWriter.write(key+":"+value);
+                    bufferedWriter.write(key+"="+value);
                     bufferedWriter.newLine();
                 } catch (IOException e) {
                     throw new RuntimeException(e);
@@ -37,24 +45,44 @@ public class DiskWriteScheduler {
         }
         System.out.println("Data flushed");
 
-         /*
+        walCompaction();
+    }
+    private void walCompaction(){
+        /*
            WAL compaction, copy the contents to hashmap
            and then again copy the contents to WAL, hashmap do not store
            the duplicate values
           */
-        HashMap<String,String>temp = new HashMap<>();
+        //schema:user:col_name1,col_name2,col_name3
+        //user:row_id:key=value
+        HashMap<String,String>tempKeyValues = new HashMap<>();
+        HashMap<String,String>schemaMap = new HashMap<>();
         try(BufferedReader bufferedReader = new BufferedReader(new FileReader(WAL.wal_log_path))){
             String line;
             while((line=bufferedReader.readLine())!=null){
-                String[] parts = line.split(":");
-                temp.put(parts[0],parts[1]);
+                String[] colonSeperation = line.split(":");
+                if(colonSeperation[0].equalsIgnoreCase("schema")){
+                    schemaMap.put(colonSeperation[0]+":"+colonSeperation[1],colonSeperation[2]);
+                }
+                else{
+                    String[] parts = line.split("=");
+                    tempKeyValues.put(parts[0],parts[1]);
+                }
             }
         }catch (IOException e){
             e.printStackTrace();
         }
 
         try(BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(WAL.wal_log_path))){
-            temp.forEach((key,value)->{
+            tempKeyValues.forEach((key,value)->{
+                try {
+                    bufferedWriter.write(key+"="+value);
+                    bufferedWriter.newLine();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+            schemaMap.forEach((key,value)->{
                 try {
                     bufferedWriter.write(key+":"+value);
                     bufferedWriter.newLine();
@@ -65,8 +93,8 @@ public class DiskWriteScheduler {
         }catch(IOException e){
             e.printStackTrace();
         }
-
     }
+
     public void shutdown(){
         service.shutdown();
         try {

@@ -2,6 +2,7 @@ package crash_recovery;
 
 import java.io.*;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WAL {
@@ -21,11 +22,46 @@ public class WAL {
         }
     }
 
-    public void append(String key,String value) throws FileNotFoundException {
+    public void append(List<String>keys, List<String>values, String table, ConcurrentHashMap<String,Integer>rowCounter) throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(wal_log_path,true);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
+
+        int rowid = rowCounter.get(table);
+
         try{
-            bufferedWriter.write(key+":"+value);
+            for(int i=0;i<keys.size();i++){
+                bufferedWriter.write(table+":"+rowid+":"+keys.get(i)+"="+values.get(i));
+                bufferedWriter.newLine();
+            }
+            bufferedWriter.flush();
+            fos.getFD().sync();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void append(List<String>keys, List<String>values, String table, int rowid) throws FileNotFoundException {
+        FileOutputStream fos = new FileOutputStream(wal_log_path,true);
+        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
+
+        try{
+            for(int i=0;i<keys.size();i++){
+                bufferedWriter.write(table+":"+rowid+":"+keys.get(i)+"="+values.get(i));
+                bufferedWriter.newLine();
+            }
+            bufferedWriter.flush();
+            fos.getFD().sync();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void append(String tableName,String columns) throws FileNotFoundException {
+        FileOutputStream fos = new FileOutputStream(wal_log_path, true);
+        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
+
+        try {
+            bufferedWriter.write("schema" + ":" + tableName + ":" + columns);
             bufferedWriter.newLine();
             bufferedWriter.flush();
             fos.getFD().sync();
@@ -33,14 +69,18 @@ public class WAL {
             throw new RuntimeException(e);
         }
     }
-    public static void replay(ConcurrentHashMap<String,String> cache){
+
+        public static void replay(ConcurrentHashMap<String,String> cache,ConcurrentHashMap<String,String>schema){
         try(BufferedReader bufferedReader = new BufferedReader(new FileReader(wal_log_path))){
             String line;
             while((line= bufferedReader.readLine())!=null){
-                int pos = line.indexOf(':');
-                String lineKey = line.substring(0,pos);
-                String lineValue = line.substring(pos+1);
-                cache.put(lineKey,lineValue);
+                String[]parts = line.split(":");
+                if(parts[0].equalsIgnoreCase("schema")){
+                    schema.put(parts[1],parts[2]);
+                }else{
+                    parts = line.split("=");
+                    cache.put(parts[0],parts[1]);
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();

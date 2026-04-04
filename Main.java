@@ -11,10 +11,10 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         KeyValueStore keyValueStore = new KeyValueStore(filepath);
-        WAL.replay(keyValueStore.getCache());
+        WAL.replay(keyValueStore.getCache(),keyValueStore.getSchema());
 
         DiskWriteScheduler diskWriteScheduler = new DiskWriteScheduler();
-        diskWriteScheduler.schedule(keyValueStore.getCache(),filepath);
+        diskWriteScheduler.schedule(keyValueStore.getCache(),filepath,keyValueStore.getSchema());
 
         while (true){
 //            System.out.print(">");
@@ -23,14 +23,17 @@ public class Main {
                 break;
             }
             String[] parts = line.split(" ");
-
-            if(parts[0].equalsIgnoreCase(CONSTANTS.INSERT) || parts[0].equalsIgnoreCase(CONSTANTS.UPDATE)){
-                keyValueStore.put(parts[1],parts[2]);
-            }else if(parts[0].equalsIgnoreCase(CONSTANTS.GET)){
-                System.out.println(keyValueStore.get(parts[1]));
+            System.out.println(parts[0]);
+            if(parts[0].equalsIgnoreCase(CONSTANTS.CREATE)){
+                keyValueStore.createTable(line);
+            }else if(parts[0].equalsIgnoreCase(CONSTANTS.INSERT)){
+                keyValueStore.put(line);
+            }else if(parts[0].equalsIgnoreCase(CONSTANTS.UPDATE)){
+                keyValueStore.update(line);
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.DELETE)){
-                keyValueStore.delete(parts[1]);
+                keyValueStore.delete(line);
             }
+
         }
         diskWriteScheduler.shutdown();
     }
