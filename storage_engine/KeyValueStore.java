@@ -11,13 +11,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class KeyValueStore {
 
     private final String filePath;
-    ConcurrentHashMap<String,String> cache;
+    HashMap<String,HashMap<String,HashMap<String,String>>>cache;
     private WAL wal;
     ConcurrentHashMap<String,Integer>rowCounter;
     ConcurrentHashMap<String,String>schema;
 
     public KeyValueStore(String filePath){
-        cache = new ConcurrentHashMap<>();
+        cache = new HashMap<>();
         rowCounter = new ConcurrentHashMap<>();
         schema = new ConcurrentHashMap<>();
         this.filePath = filePath;
@@ -55,24 +55,33 @@ public class KeyValueStore {
             }
         }
 
-        // cache -> (tablename:row_id:key,value)
-        int maxRowId = 0;
-        for (Map.Entry<String, ?> entry : cache.entrySet()) {
-            String key = entry.getKey();
-            String[] keyParts = key.split(":");
-
-            if (keyParts[0].equalsIgnoreCase(tableName)) {
-                int rowId = Integer.parseInt(keyParts[1]);
-                maxRowId = Math.max(maxRowId, rowId);
+        // cache -> (table,{row_id,{key,value}})
+        if(rowCounter.containsKey(tableName)){
+            int rowId = rowCounter.get(tableName);
+            rowCounter.replace(tableName,rowId+1);
+        }else{
+            /*
+                rowCounter is not persistent we need to
+                iterate and find the max row value
+            */
+            HashMap<String,HashMap<String,String>>columns = cache.get(tableName);
+            int maxRowId = 0;
+            if(columns!=null){
+                for(Map.Entry<String,?>entry:columns.entrySet()){
+                    String rowid = entry.getKey();
+                    maxRowId = Math.max(maxRowId,Integer.parseInt(rowid));
+                }
             }
+            rowCounter.put(tableName,maxRowId+1);
         }
-        rowCounter.put(tableName,maxRowId+1);
         wal.append(keys,values,tableName,rowCounter);
 
+        HashMap<String,String>columnValues = new HashMap<>();
         for(int i=0;i<numberOfCol;i++){
-            String keyToPut = tableName+":"+String.valueOf(maxRowId+1)+":"+keys.get(i);
-            cache.put(keyToPut,values.get(i));
+            columnValues.put(keys.get(i),values.get(i));
         }
+        int rowId = rowCounter.get(tableName);
+        cache.get(tableName).putIfAbsent(Integer.toString(rowId),columnValues);
     }
 
     public void delete(String key) throws FileNotFoundException {
@@ -87,17 +96,17 @@ public class KeyValueStore {
             throw new InvalidInputException("Table doesn't exists");
         }
 
-        // (tableName:row_id:key,value)
-        for(Map.Entry<String,String>entry:cache.entrySet()){
-            String cacheKey = entry.getKey();
-
-            String []cacheKeyParts = cacheKey.split(":");
-            if(tableName.equalsIgnoreCase(cacheKeyParts[0]) && row_id.equalsIgnoreCase(cacheKeyParts[1])){
-                System.out.println(cacheKeyParts[2]);
-                keys.add(cacheKeyParts[2]);
-                values.add("_DELETED_");
-                cache.replace(cacheKey,"_DELETED_");
-            }
+        // cache -> (table,{row_id,{key,value}})
+        HashMap<String,String>columnValues = cache.get(tableName).get(row_id);
+        if(columnValues==null){
+            throw new InvalidInputException("Row doesn't exists");
+        }
+        for(Map.Entry<String, String> entry:columnValues.entrySet()){
+            String column = entry.getKey();
+            String columnValue = entry.getValue();
+            keys.add(column);
+            values.add("__DELETED__");
+            cache.get(tableName).get(row_id).replace(column,"__DELETED__");
         }
         wal.append(keys,values,tableName, Integer.parseInt(row_id));
     }
@@ -114,7 +123,7 @@ public class KeyValueStore {
             throw new InvalidInputException("Invalid column or table name");
         }
 
-        cache.replace(tableName+":"+row_id+":"+column,columnValue);
+        cache.get(tableName).get(row_id).replace(column,columnValue);
         List<String>keys = new ArrayList<>();
         List<String>values = new ArrayList<>();
         keys.add(column);
@@ -122,9 +131,45 @@ public class KeyValueStore {
         wal.append(keys,values,tableName,Integer.parseInt(row_id));
     }
 
-    public void select(String key){
-
+    public String selectByRowId(String key){
+        String [] tokens = key.split(" ");
+        /**
+            select * from users where id = 1
+            select name,age from users where id = 1
+         */
+        String table =  tokens[3];
+        if(!schema.containsKey(table)){
+            throw new InvalidInputException("table doesn't exist");
+        }
+        String []columns = schema.get(table).split(",");
+        String row_id = tokens[7];
+        // table:row_id:column
+        HashMap<String,String>columnValues = new HashMap<>();
+        StringBuilder result =new StringBuilder();
+        for(String column:columns){
+            String columnValue = cache.get(table).get(row_id).get(column);
+            columnValues.put(column,columnValue);
+            result.append(columnValue);
+            result.append(" ");
+        }
+        if(!tokens[1].equals("*")){
+            String [] parts = tokens[1].split(",");
+            result.setLength(0);
+            for(String column:parts){
+                if(!cache.get(table).get(row_id).containsKey(column)){
+                    throw new InvalidInputException("row id or column doesn't exist");
+                }
+                String columnValue = cache.get(table).get(row_id).get(column);
+                result.append(columnValue);
+                result.append(" ");
+            }
+        }
+        return result.toString();
     }
+    public String selectAllRows(String key){
+        return "";
+    }
+
     public void createTable(String key) throws FileNotFoundException {
         String []parts = key.split(" ");
         String tableName = parts[2];
@@ -149,7 +194,7 @@ public class KeyValueStore {
         return Arrays.stream(parts).anyMatch(s->s.equalsIgnoreCase(columnName));
     }
 
-    public ConcurrentHashMap<String,String>getCache(){return cache;}
+    public HashMap<String,HashMap<String,HashMap<String,String>>>getCache(){return cache;}
     public ConcurrentHashMap<String, Integer> getRowCounter() { return rowCounter;}
     public ConcurrentHashMap<String, String> getSchema() {return schema;}
 }

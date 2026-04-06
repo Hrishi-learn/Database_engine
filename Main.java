@@ -11,7 +11,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         KeyValueStore keyValueStore = new KeyValueStore(filepath);
-        WAL.replay(keyValueStore.getCache(),keyValueStore.getSchema());
+        WAL.replay(keyValueStore.getCache(),keyValueStore.getSchema(),keyValueStore.getRowCounter());
 
         DiskWriteScheduler diskWriteScheduler = new DiskWriteScheduler();
         diskWriteScheduler.schedule(keyValueStore.getCache(),filepath,keyValueStore.getSchema());
@@ -23,7 +23,6 @@ public class Main {
                 break;
             }
             String[] parts = line.split(" ");
-            System.out.println(parts[0]);
             if(parts[0].equalsIgnoreCase(CONSTANTS.CREATE)){
                 keyValueStore.createTable(line);
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.INSERT)){
@@ -32,6 +31,9 @@ public class Main {
                 keyValueStore.update(line);
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.DELETE)){
                 keyValueStore.delete(line);
+            }else if(parts[0].equalsIgnoreCase(CONSTANTS.SELECT)){
+                String result = keyValueStore.selectByRowId(line);
+                System.out.println(result);
             }
 
         }

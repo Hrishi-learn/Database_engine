@@ -15,13 +15,19 @@ public class DiskWriteScheduler {
     public DiskWriteScheduler(){
         service =  Executors.newScheduledThreadPool(1);
     }
-    public void schedule(ConcurrentHashMap<String,String> cache, String filepath, ConcurrentHashMap<String,String>schema){
+    public void schedule(HashMap<String,HashMap<String,HashMap<String,String>>> cache, String filepath, ConcurrentHashMap<String,String>schema){
         service.scheduleAtFixedRate(()->flush(cache,filepath,schema),300,300, TimeUnit.SECONDS);
     }
-    private void flush(ConcurrentHashMap<String,String>cache,String filepath,ConcurrentHashMap<String,String>schema){
+    private void flush(HashMap<String,HashMap<String,HashMap<String,String>>>cache,String filepath,ConcurrentHashMap<String,String>schema){
         /*
           change pending, need to handle the case when app crashes during
           flushing from memory to OS disk.
+
+          also need to handle concurrency because concurrentHashMap provides
+          atomicity for single key-value pair but for our case we need concurrency for
+          multiple key value pairs,
+          users:1:name=hrishi
+          users:1:age=24
          */
         try(BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(filepath))){
             schema.forEach((key,value)->{
@@ -32,13 +38,17 @@ public class DiskWriteScheduler {
                     throw new RuntimeException(e);
                 }
             });
-            cache.forEach((key,value)->{
-                try {
-                    bufferedWriter.write(key+"="+value);
-                    bufferedWriter.newLine();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+            cache.forEach((table,rows)->{
+                rows.forEach((row,columns)->{
+                    columns.forEach((column,value)->{
+                        try{
+                            bufferedWriter.write(table+":"+row+":"+column+"="+value);
+                            bufferedWriter.newLine();
+                        }catch (IOException e){
+                            throw new RuntimeException(e);
+                        }
+                    });
+                });
             });
         }catch (IOException e){
             e.printStackTrace();

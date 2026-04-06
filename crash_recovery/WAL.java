@@ -70,7 +70,7 @@ public class WAL {
         }
     }
 
-        public static void replay(ConcurrentHashMap<String,String> cache,ConcurrentHashMap<String,String>schema){
+        public static void replay(HashMap<String,HashMap<String,HashMap<String,String>>> cache,ConcurrentHashMap<String,String>schema,ConcurrentHashMap<String,Integer>rowCounter){
         try(BufferedReader bufferedReader = new BufferedReader(new FileReader(wal_log_path))){
             String line;
             while((line= bufferedReader.readLine())!=null){
@@ -79,7 +79,12 @@ public class WAL {
                     schema.put(parts[1],parts[2]);
                 }else{
                     parts = line.split("=");
-                    cache.put(parts[0],parts[1]);
+                    String[] tokens = parts[0].split(":");
+
+                    cache.computeIfAbsent(tokens[0],table-> new HashMap<>())
+                            .computeIfAbsent(tokens[1],row-> new HashMap<>())
+                            .put(tokens[2],parts[1]);
+
                 }
             }
         } catch (IOException e) {
