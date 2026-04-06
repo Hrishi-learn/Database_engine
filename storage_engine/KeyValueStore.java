@@ -131,7 +131,7 @@ public class KeyValueStore {
         wal.append(keys,values,tableName,Integer.parseInt(row_id));
     }
 
-    public String selectByRowId(String key){
+    public void selectByRowId(String key){
         String [] tokens = key.split(" ");
         /**
             select * from users where id = 1
@@ -164,10 +164,38 @@ public class KeyValueStore {
                 result.append(" ");
             }
         }
-        return result.toString();
+        System.out.println(result.toString());
     }
-    public String selectAllRows(String key){
-        return "";
+    public void selectAllRows(String key){
+         String []tokens = key.split(" ");
+         String table = tokens[3];
+         if(!schema.containsKey(table)){
+             throw new InvalidInputException("Table doesn't exists");
+         }
+         List<String>columns = new ArrayList<>();
+         if(tokens[1].equals("*")){
+             String schemaValue = schema.get(table);
+             columns = List.of(schemaValue.split(","));
+         }else{
+             columns = List.of(tokens[1].split(","));
+         }
+         HashMap<String,HashMap<String,String>>rowColumns = cache.get(table);
+
+//         for(String column:columns){
+//             System.out.print(column + " ");
+//         }
+//         System.out.println();
+
+         for(Map.Entry<String,HashMap<String,String>>entry:rowColumns.entrySet()){
+             String row = entry.getKey();
+             HashMap<String,String>colVal = entry.getValue();
+             System.out.print(row+" ");
+             for(String column:columns){
+                 System.out.print(colVal.get(column)+" ");
+             }
+             System.out.println();
+         }
+
     }
 
     public void createTable(String key) throws FileNotFoundException {

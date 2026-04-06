@@ -3,6 +3,7 @@ import scheduler.DiskWriteScheduler;
 import storage_engine.KeyValueStore;
 
 import java.io.FileNotFoundException;
+import java.util.HashMap;
 import java.util.Scanner;
 
 public class Main {
@@ -32,8 +33,17 @@ public class Main {
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.DELETE)){
                 keyValueStore.delete(line);
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.SELECT)){
-                String result = keyValueStore.selectByRowId(line);
-                System.out.println(result);
+                HashMap<String,Integer>queryStrings = new HashMap<>();
+                for(String part:parts){
+                    queryStrings.put(part,1);
+                }
+                if(queryStrings.containsKey("where")){
+                    if(queryStrings.containsKey("id")){
+                        keyValueStore.selectByRowId(line);
+                    }
+                }else{
+                    keyValueStore.selectAllRows(line);
+                }
             }
 
         }
