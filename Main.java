@@ -12,7 +12,7 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         KeyValueStore keyValueStore = new KeyValueStore(filepath);
-        WAL.replay(keyValueStore.getCache(),keyValueStore.getSchema(),keyValueStore.getRowCounter());
+        WAL.replay(keyValueStore.getCache(),keyValueStore.getSchema(),keyValueStore.getIndex());
 
         DiskWriteScheduler diskWriteScheduler = new DiskWriteScheduler();
         diskWriteScheduler.schedule(keyValueStore.getCache(),filepath,keyValueStore.getSchema());
@@ -25,7 +25,11 @@ public class Main {
             }
             String[] parts = line.split(" ");
             if(parts[0].equalsIgnoreCase(CONSTANTS.CREATE)){
-                keyValueStore.createTable(line);
+                if(parts[1].equalsIgnoreCase("table")){
+                    keyValueStore.createTable(line);
+                }else if(parts[1].equalsIgnoreCase("index")){
+                    keyValueStore.createIndex(line);
+                }
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.INSERT)){
                 keyValueStore.put(line);
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.UPDATE)){

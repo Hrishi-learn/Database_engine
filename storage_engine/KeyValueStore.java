@@ -15,6 +15,7 @@ public class KeyValueStore {
     private WAL wal;
     ConcurrentHashMap<String,Integer>rowCounter;
     ConcurrentHashMap<String,String>schema;
+    HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>index;
 
     public KeyValueStore(String filePath){
         cache = new HashMap<>();
@@ -22,6 +23,7 @@ public class KeyValueStore {
         schema = new ConcurrentHashMap<>();
         this.filePath = filePath;
         wal = new WAL();
+        index = new HashMap<>();
     }
     public void put(String rowToBeInserted) throws FileNotFoundException {
         // rowToBeInserted -> insert name:hrishi age:24 sex:male tableName
@@ -75,13 +77,17 @@ public class KeyValueStore {
             rowCounter.put(tableName,maxRowId+1);
         }
         wal.append(keys,values,tableName,rowCounter);
+        int rowId = rowCounter.get(tableName);
 
         HashMap<String,String>columnValues = new HashMap<>();
         for(int i=0;i<numberOfCol;i++){
             columnValues.put(keys.get(i),values.get(i));
+            if(index.containsKey(tableName) && index.get(tableName).containsKey(keys.get(i))){
+                TreeMap<String,HashSet<Integer>>columnIndex = index.get(tableName).get(keys.get(i));
+                columnIndex.computeIfAbsent(values.get(i),val -> new HashSet<>()).add(rowId);
+            }
         }
-        int rowId = rowCounter.get(tableName);
-        cache.get(tableName).putIfAbsent(Integer.toString(rowId),columnValues);
+        cache.computeIfAbsent(tableName,val -> new HashMap<>()).putIfAbsent(Integer.toString(rowId),columnValues);
     }
 
     public void delete(String key) throws FileNotFoundException {
@@ -123,12 +129,21 @@ public class KeyValueStore {
             throw new InvalidInputException("Invalid column or table name");
         }
 
-        cache.get(tableName).get(row_id).replace(column,columnValue);
         List<String>keys = new ArrayList<>();
         List<String>values = new ArrayList<>();
         keys.add(column);
         values.add(columnValue);
         wal.append(keys,values,tableName,Integer.parseInt(row_id));
+
+        if(index.containsKey(tableName) && index.get(tableName).containsKey(column)){
+           TreeMap<String,HashSet<Integer>>columnValues = index.get(tableName).get(column);
+           String oldValue = cache.get(tableName).get(row_id).get(column);
+           HashSet<Integer>oldValueRowIds = columnValues.get(oldValue);
+           oldValueRowIds.remove(Integer.parseInt(row_id));
+
+           index.get(tableName).get(column).computeIfAbsent(columnValue, val-> new HashSet<>()).add(Integer.parseInt(row_id));
+        }
+        cache.get(tableName).get(row_id).replace(column,columnValue);
     }
 
     public void selectByRowId(String key){
@@ -211,9 +226,34 @@ public class KeyValueStore {
             columns.append(",");
         }
         columns.append(parts[partsLength-1]);
-        wal.append(tableName, columns.toString());
+        wal.append("schema",tableName, columns.toString());
         schema.put(tableName, columns.toString());
     }
+
+    public void createIndex(String key) throws FileNotFoundException {
+        String []tokens = key.split(" ");
+        String table = tokens[3];
+        String columnName = tokens[4];
+
+        if(!schema.containsKey(table)){
+            throw new InvalidInputException("Table doesn't exists");
+        }
+        String[] columns = schema.get(table).split(",");
+        if(Arrays.stream(columns).noneMatch(column->column.equalsIgnoreCase(columnName))){
+            throw new InvalidInputException("Column doesn't exists");
+        }
+        if(index.containsKey(table) && index.get(table).containsKey(columnName)){
+            System.out.println("Index already exists");
+            return;
+        }
+
+        wal.append("index",table,columnName);
+
+        HashMap<String,TreeMap<String,HashSet<Integer>>>columnIndex = new HashMap<>();
+        columnIndex.put(columnName,new TreeMap<>());
+        index.put(table,columnIndex);
+    }
+
     private boolean checkColumnExist(String tableName,String columnName){
         if(!schema.containsKey(tableName))return false;
         String columns = schema.get(tableName);
@@ -225,4 +265,5 @@ public class KeyValueStore {
     public HashMap<String,HashMap<String,HashMap<String,String>>>getCache(){return cache;}
     public ConcurrentHashMap<String, Integer> getRowCounter() { return rowCounter;}
     public ConcurrentHashMap<String, String> getSchema() {return schema;}
+    public HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>> getIndex(){ return index;}
 }

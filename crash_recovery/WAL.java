@@ -1,8 +1,7 @@
 package crash_recovery;
 
 import java.io.*;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class WAL {
@@ -56,12 +55,12 @@ public class WAL {
         }
     }
 
-    public void append(String tableName,String columns) throws FileNotFoundException {
+    public void append(String functionality,String tableName,String columns) throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(wal_log_path, true);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
 
         try {
-            bufferedWriter.write("schema" + ":" + tableName + ":" + columns);
+            bufferedWriter.write(functionality + ":" + tableName + ":" + columns);
             bufferedWriter.newLine();
             bufferedWriter.flush();
             fos.getFD().sync();
@@ -70,14 +69,22 @@ public class WAL {
         }
     }
 
-        public static void replay(HashMap<String,HashMap<String,HashMap<String,String>>> cache,ConcurrentHashMap<String,String>schema,ConcurrentHashMap<String,Integer>rowCounter){
-        try(BufferedReader bufferedReader = new BufferedReader(new FileReader(wal_log_path))){
+    public static void replay(HashMap<String,HashMap<String,HashMap<String,String>>> cache, ConcurrentHashMap<String,String>schema, HashMap<String,HashMap<String, TreeMap<String, HashSet<Integer>>>> index){
+         List<String>rowColumnData = new ArrayList<>();
+         try(BufferedReader bufferedReader = new BufferedReader(new FileReader(wal_log_path))){
             String line;
             while((line= bufferedReader.readLine())!=null){
                 String[]parts = line.split(":");
                 if(parts[0].equalsIgnoreCase("schema")){
                     schema.put(parts[1],parts[2]);
-                }else{
+                }
+                else if(parts[0].equalsIgnoreCase("index")){
+                    HashMap<String,TreeMap<String,HashSet<Integer>>>columnIndex = new HashMap<>();
+                    columnIndex.put(parts[2],new TreeMap<>());
+                    index.put(parts[1],columnIndex);
+                }
+                else{
+                    rowColumnData.add(line);
                     parts = line.split("=");
                     String[] tokens = parts[0].split(":");
 
@@ -90,5 +97,20 @@ public class WAL {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
+         for(String data:rowColumnData){
+             String []tokens = data.split(":");
+             String table = tokens[0];
+             String rowId = tokens[1];
+             String []keyValuePair = tokens[2].split("=");
+             String column = keyValuePair[0];
+             String value = keyValuePair[1];
+
+             if(index.containsKey(table) && index.get(table).containsKey(column)){
+                 TreeMap<String,HashSet<Integer>>columnIndex = index.get(table).get(column);
+                 columnIndex.computeIfAbsent(value,val -> new HashSet<>()).add(Integer.parseInt(rowId));
+             }
+         }
+
     }
 }
