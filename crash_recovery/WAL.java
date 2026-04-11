@@ -21,15 +21,17 @@ public class WAL {
         }
     }
 
-    public void append(List<String>keys, List<String>values, String table, ConcurrentHashMap<String,Integer>rowCounter) throws FileNotFoundException {
+    public void append(HashMap<String,String>columnValuePairs, String table, ConcurrentHashMap<String,Integer>rowCounter) throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(wal_log_path,true);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
 
         int rowid = rowCounter.get(table);
 
         try{
-            for(int i=0;i<keys.size();i++){
-                bufferedWriter.write(table+":"+rowid+":"+keys.get(i)+"="+values.get(i));
+            for(Map.Entry<String,String>entry:columnValuePairs.entrySet()){
+                String key = entry.getKey();
+                String value = entry.getValue();
+                bufferedWriter.write(table+":"+rowid+":"+key+"="+value);
                 bufferedWriter.newLine();
             }
             bufferedWriter.flush();
