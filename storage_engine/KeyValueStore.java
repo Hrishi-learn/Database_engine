@@ -212,6 +212,62 @@ public class KeyValueStore {
          }
 
     }
+    public void selectRowByColumn(String key){
+        String []tokens = key.split(" ");
+        String table = tokens[3];
+        String columnName = tokens[5];
+        String columnValue = tokens[7];
+
+        String columns = tokens[1];
+        String []requiredColumns;
+
+        if(!schema.containsKey(table)){
+            throw new InvalidInputException("The table do not exists");
+        }
+
+        if(columns.equals("*")){
+            requiredColumns = schema.get(table).split(",");
+        }else{
+            requiredColumns = columns.split(",");
+        }
+
+        if(Arrays.stream(requiredColumns).noneMatch(column->column.equalsIgnoreCase(columnName))){
+            throw new InvalidInputException("The column do not exists");
+        }
+
+        if(index.containsKey(table) && index.get(table).containsKey(columnName)){
+            HashSet<Integer>rowIds = index.get(table).get(columnName).get(columnValue);
+            for(Integer row:rowIds){
+                HashMap<String,String>rowColumnValues = cache.get(table).get(Integer.toString(row));
+                if(!rowColumnValues.get(columnName).equals(columnValue)){
+                    continue;
+                }
+
+                for(String column:requiredColumns){
+                    System.out.print(rowColumnValues.get(column)+" ");
+                }
+                System.out.println();
+            }
+        }else{
+            HashMap<String,HashMap<String,String>>rowColumnMap = cache.get(table);
+            List<String>rowIds = new ArrayList<>();
+            for(Map.Entry<String,HashMap<String,String>>entry:rowColumnMap.entrySet()){
+                String rowId = entry.getKey();
+                HashMap<String,String>columnValueMap = entry.getValue();
+                if(columnValueMap.get(columnName).equals(columnValue)){
+                    rowIds.add(rowId);
+                }
+            }
+            for(String rowId:rowIds){
+                HashMap<String,String>rowColumnValues = cache.get(table).get(rowId);
+                for(String column:requiredColumns){
+                    System.out.print(rowColumnValues.get(column)+" ");
+                }
+                System.out.println();
+            }
+        }
+
+    }
 
     public void createTable(String key) throws FileNotFoundException {
         String []parts = key.split(" ");

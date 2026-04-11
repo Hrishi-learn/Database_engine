@@ -44,6 +44,8 @@ public class Main {
                 if(queryStrings.containsKey("where")){
                     if(queryStrings.containsKey("id")){
                         keyValueStore.selectByRowId(line);
+                    }else{
+                        keyValueStore.selectRowByColumn(line);
                     }
                 }else{
                     keyValueStore.selectAllRows(line);
