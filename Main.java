@@ -1,3 +1,5 @@
+import command_parser.Command;
+import command_parser.SimpleParser;
 import crash_recovery.WAL;
 import scheduler.DiskWriteScheduler;
 import storage_engine.KeyValueStore;
@@ -24,18 +26,25 @@ public class Main {
                 break;
             }
             String[] parts = line.split(" ");
+            Command command = SimpleParser.parser(line);
+
             if(parts[0].equalsIgnoreCase(CONSTANTS.CREATE)){
                 if(parts[1].equalsIgnoreCase("table")){
-                    keyValueStore.createTable(line);
+                    keyValueStore.createTable(command);
+                    System.out.println("Table created");
                 }else if(parts[1].equalsIgnoreCase("index")){
-                    keyValueStore.createIndex(line);
+                    keyValueStore.createIndex(command);
+                    System.out.println("Index created");
                 }
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.INSERT)){
-                keyValueStore.put(line);
+                keyValueStore.put(command);
+                System.out.println("Inserted the values successfully");
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.UPDATE)){
-                keyValueStore.update(line);
+                keyValueStore.update(command);
+                System.out.println("column updated");
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.DELETE)){
-                keyValueStore.delete(line);
+                keyValueStore.delete(command);
+                System.out.println("row deleted");
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.SELECT)){
                 HashMap<String,Integer>queryStrings = new HashMap<>();
                 for(String part:parts){
@@ -43,12 +52,12 @@ public class Main {
                 }
                 if(queryStrings.containsKey("where")){
                     if(queryStrings.containsKey("id")){
-                        keyValueStore.selectByRowId(line);
+                        keyValueStore.selectByRowId(command);
                     }else{
-                        keyValueStore.selectRowByColumn(line);
+                        keyValueStore.selectRowByColumn(command);
                     }
                 }else{
-                    keyValueStore.selectAllRows(line);
+                    keyValueStore.selectAllRows(command);
                 }
             }
 

@@ -1,5 +1,6 @@
 package storage_engine;
 
+import command_parser.Command;
 import crash_recovery.WAL;
 import exceptions.InvalidInputException;
 import exceptions.TableNotFoundException;
@@ -25,12 +26,13 @@ public class KeyValueStore {
         wal = new WAL();
         index = new HashMap<>();
     }
-    public void put(String rowToBeInserted) throws FileNotFoundException {
+    public void put(Command command) throws FileNotFoundException {
         // rowToBeInserted -> insert name:hrishi age:24 sex:male tableName
         // parts -> [insert, name:hrishi, age:24, sex:male, tableName]
-        String[] parts = rowToBeInserted.split(" ");
-        int n = parts.length;
-        String tableName = parts[n-1];
+        String tableName = command.getTable();
+        List<String>columnList = command.getColumns();
+        HashMap<String,String>columnValueMap = command.getColumnValueMap();
+
         if(!schema.containsKey(tableName)){
             throw new TableNotFoundException("No table found: "+tableName);
         }
@@ -39,24 +41,14 @@ public class KeyValueStore {
         //[col_name1,col_name2,....]
         String []colNames = currSchema.split(",");
         int numberOfCol = colNames.length;
-        if(numberOfCol!=n-2){
+        if(numberOfCol!=columnList.size()){
             throw new InvalidInputException("Number of columns in schema and input do not match");
         }
-        List<String>keys = new ArrayList<>();
-        List<String>values = new ArrayList<>();
-
-        for(int i=1;i<n-1;i++){
-            String[] pair = parts[i].split(":");
-            keys.add(pair[0]);
-            values.add(pair[1]);
-        }
-
         for(int i=0;i<numberOfCol;i++){
-            if(!keys.get(i).equalsIgnoreCase(colNames[i])){
+            if(!columnList.get(i).equalsIgnoreCase(colNames[i])){
                 throw new InvalidInputException("Column names do not match with schema");
             }
         }
-
         // cache -> (table,{row_id,{key,value}})
         if(rowCounter.containsKey(tableName)){
             int rowId = rowCounter.get(tableName);
@@ -76,25 +68,27 @@ public class KeyValueStore {
             }
             rowCounter.put(tableName,maxRowId+1);
         }
-        wal.append(keys,values,tableName,rowCounter);
+        wal.append(columnValueMap,tableName,rowCounter);
         int rowId = rowCounter.get(tableName);
 
-        HashMap<String,String>columnValues = new HashMap<>();
-        for(int i=0;i<numberOfCol;i++){
-            columnValues.put(keys.get(i),values.get(i));
-            if(index.containsKey(tableName) && index.get(tableName).containsKey(keys.get(i))){
-                TreeMap<String,HashSet<Integer>>columnIndex = index.get(tableName).get(keys.get(i));
-                columnIndex.computeIfAbsent(values.get(i),val -> new HashSet<>()).add(rowId);
+        /*
+        * updating the index table for new inserts
+        * */
+        for(Map.Entry<String,String>entry:columnValueMap.entrySet()){
+            String column = entry.getKey();
+            String value = entry.getValue();
+            if(index.containsKey(tableName) && index.get(tableName).containsKey(column)){
+                TreeMap<String,HashSet<Integer>>columnIndex = index.get(tableName).get(column);
+                columnIndex.computeIfAbsent(value,val -> new HashSet<>()).add(rowId);
             }
         }
-        cache.computeIfAbsent(tableName,val -> new HashMap<>()).putIfAbsent(Integer.toString(rowId),columnValues);
+        cache.computeIfAbsent(tableName,val -> new HashMap<>()).putIfAbsent(Integer.toString(rowId),columnValueMap);
     }
 
-    public void delete(String key) throws FileNotFoundException {
+    public void delete(Command commmand) throws FileNotFoundException {
         //delete from table where id = ?
-        String []parts = key.split(" ");
-        String tableName = parts[2];
-        String row_id = parts[6];
+        String tableName = commmand.getTable();
+        String row_id = commmand.getRowId();
         List<String>keys = new ArrayList<>();
         List<String>values = new ArrayList<>();
 
@@ -117,13 +111,12 @@ public class KeyValueStore {
         wal.append(keys,values,tableName, Integer.parseInt(row_id));
     }
 
-    public void update(String key) throws FileNotFoundException {
+    public void update(Command command) throws FileNotFoundException {
         // update table set key = ? where id = ?
-        String []parts = key.split(" ");
-        String tableName = parts[1];
-        String column = parts[3];
-        String columnValue = parts[5];
-        String row_id = parts[9];
+        String tableName = command.getTable();
+        String column = command.getColumns().get(0);
+        String columnValue = command.getColumnValueMap().get(column);
+        String row_id = command.getRowId();
 
         if(!checkColumnExist(tableName,column)){
             throw new InvalidInputException("Invalid column or table name");
@@ -146,31 +139,30 @@ public class KeyValueStore {
         cache.get(tableName).get(row_id).replace(column,columnValue);
     }
 
-    public void selectByRowId(String key){
-        String [] tokens = key.split(" ");
+    public void selectByRowId(Command command){
         /**
             select * from users where id = 1
             select name,age from users where id = 1
          */
-        String table =  tokens[3];
+        String table =  command.getTable();
         if(!schema.containsKey(table)){
             throw new InvalidInputException("table doesn't exist");
         }
         String []columns = schema.get(table).split(",");
-        String row_id = tokens[7];
+        String row_id = command.getRowId();
         // table:row_id:column
         HashMap<String,String>columnValues = new HashMap<>();
-        StringBuilder result =new StringBuilder();
+        StringBuilder result = new StringBuilder();
         for(String column:columns){
             String columnValue = cache.get(table).get(row_id).get(column);
             columnValues.put(column,columnValue);
             result.append(columnValue);
             result.append(" ");
         }
-        if(!tokens[1].equals("*")){
-            String [] parts = tokens[1].split(",");
+        if(!command.isEntireRow()){
             result.setLength(0);
-            for(String column:parts){
+            List<String>columnsToQuery = command.getColumns();
+            for(String column:columnsToQuery){
                 if(!cache.get(table).get(row_id).containsKey(column)){
                     throw new InvalidInputException("row id or column doesn't exist");
                 }
@@ -181,18 +173,17 @@ public class KeyValueStore {
         }
         System.out.println(result.toString());
     }
-    public void selectAllRows(String key){
-         String []tokens = key.split(" ");
-         String table = tokens[3];
+    public void selectAllRows(Command command){
+         String table = command.getTable();
          if(!schema.containsKey(table)){
              throw new InvalidInputException("Table doesn't exists");
          }
          List<String>columns = new ArrayList<>();
-         if(tokens[1].equals("*")){
+         if(command.isEntireRow()){
              String schemaValue = schema.get(table);
              columns = List.of(schemaValue.split(","));
          }else{
-             columns = List.of(tokens[1].split(","));
+             columns = command.getColumns();
          }
          HashMap<String,HashMap<String,String>>rowColumns = cache.get(table);
 
@@ -212,26 +203,24 @@ public class KeyValueStore {
          }
 
     }
-    public void selectRowByColumn(String key){
-        String []tokens = key.split(" ");
-        String table = tokens[3];
-        String columnName = tokens[5];
-        String columnValue = tokens[7];
+    public void selectRowByColumn(Command command){
 
-        String columns = tokens[1];
-        String []requiredColumns;
+        String table = command.getTable();
+        String columnName = command.getColumns().get(0);
+        String columnValue = command.getColumnValueMap().get(columnName);
+
+        List<String>totalColumnsToQuery = command.getColumns();
+        String []totalColumnsInARow = schema.get(table).split(",");
 
         if(!schema.containsKey(table)){
             throw new InvalidInputException("The table do not exists");
         }
 
-        if(columns.equals("*")){
-            requiredColumns = schema.get(table).split(",");
-        }else{
-            requiredColumns = columns.split(",");
+        if(command.isEntireRow()){
+            totalColumnsToQuery = List.of(totalColumnsInARow);
         }
 
-        if(Arrays.stream(requiredColumns).noneMatch(column->column.equalsIgnoreCase(columnName))){
+        if(Arrays.stream(totalColumnsInARow).noneMatch(column->column.equalsIgnoreCase(columnName))){
             throw new InvalidInputException("The column do not exists");
         }
 
@@ -243,7 +232,7 @@ public class KeyValueStore {
                     continue;
                 }
 
-                for(String column:requiredColumns){
+                for(String column:totalColumnsToQuery){
                     System.out.print(rowColumnValues.get(column)+" ");
                 }
                 System.out.println();
@@ -260,7 +249,7 @@ public class KeyValueStore {
             }
             for(String rowId:rowIds){
                 HashMap<String,String>rowColumnValues = cache.get(table).get(rowId);
-                for(String column:requiredColumns){
+                for(String column:totalColumnsToQuery){
                     System.out.print(rowColumnValues.get(column)+" ");
                 }
                 System.out.println();
@@ -269,27 +258,27 @@ public class KeyValueStore {
 
     }
 
-    public void createTable(String key) throws FileNotFoundException {
-        String []parts = key.split(" ");
-        String tableName = parts[2];
+    public void createTable(Command command) throws FileNotFoundException {
+        String tableName = command.getTable();
         if(schema.containsKey(tableName)){
             throw new InvalidInputException("Table already exists");
         }
         StringBuilder columns = new StringBuilder("");
-        int partsLength = parts.length;
-        for(int i=3;i<partsLength-1;i++){
-            columns.append(parts[i]);
+        List<String>columnsFromQuery = command.getColumns();
+        int totalNoOfColumns = columnsFromQuery.size();
+        for(int i=0;i<totalNoOfColumns-1;i++){
+            columns.append(columnsFromQuery.get(i));
             columns.append(",");
         }
-        columns.append(parts[partsLength-1]);
+        columns.append(columnsFromQuery.get(totalNoOfColumns-1));
         wal.append("schema",tableName, columns.toString());
         schema.put(tableName, columns.toString());
     }
 
-    public void createIndex(String key) throws FileNotFoundException {
-        String []tokens = key.split(" ");
-        String table = tokens[3];
-        String columnName = tokens[4];
+    public void createIndex(Command command) throws FileNotFoundException {
+
+        String table = command.getTable();
+        String columnName = command.getColumns().get(0);
 
         if(!schema.containsKey(table)){
             throw new InvalidInputException("Table doesn't exists");
@@ -308,6 +297,19 @@ public class KeyValueStore {
         HashMap<String,TreeMap<String,HashSet<Integer>>>columnIndex = new HashMap<>();
         columnIndex.put(columnName,new TreeMap<>());
         index.put(table,columnIndex);
+
+        HashMap<String,HashMap<String,String>>rowColumnPairs = cache.computeIfAbsent(table,x->new HashMap<>());
+        for(Map.Entry<String,HashMap<String,String>>entry:rowColumnPairs.entrySet()){
+            String rowId = entry.getKey();
+            HashMap<String,String>columnValuePairs = entry.getValue();
+            for(Map.Entry<String,String>nestedEntry:columnValuePairs.entrySet()){
+                String column = nestedEntry.getKey();
+                String value = nestedEntry.getValue();
+                if(column.equalsIgnoreCase(columnName)){
+                    index.get(table).get(columnName).computeIfAbsent(value,x-> new HashSet<>()).add(Integer.parseInt(rowId));
+                }
+            }
+        }
     }
 
     private boolean checkColumnExist(String tableName,String columnName){
