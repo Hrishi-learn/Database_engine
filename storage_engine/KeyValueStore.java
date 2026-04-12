@@ -276,9 +276,6 @@ public class KeyValueStore {
     }
 
     public void createIndex(Command command) throws FileNotFoundException {
-        /*
-        * need to insert the existing cache values where the index is created for the first time.
-        * */
 
         String table = command.getTable();
         String columnName = command.getColumns().get(0);
@@ -300,6 +297,19 @@ public class KeyValueStore {
         HashMap<String,TreeMap<String,HashSet<Integer>>>columnIndex = new HashMap<>();
         columnIndex.put(columnName,new TreeMap<>());
         index.put(table,columnIndex);
+
+        HashMap<String,HashMap<String,String>>rowColumnPairs = cache.computeIfAbsent(table,x->new HashMap<>());
+        for(Map.Entry<String,HashMap<String,String>>entry:rowColumnPairs.entrySet()){
+            String rowId = entry.getKey();
+            HashMap<String,String>columnValuePairs = entry.getValue();
+            for(Map.Entry<String,String>nestedEntry:columnValuePairs.entrySet()){
+                String column = nestedEntry.getKey();
+                String value = nestedEntry.getValue();
+                if(column.equalsIgnoreCase(columnName)){
+                    index.get(table).get(columnName).computeIfAbsent(value,x-> new HashSet<>()).add(Integer.parseInt(rowId));
+                }
+            }
+        }
     }
 
     private boolean checkColumnExist(String tableName,String columnName){
