@@ -74,7 +74,35 @@ public class WAL {
         }
     }
 
-    public static void replay(HashMap<String,HashMap<String,HashMap<String,String>>> cache, ConcurrentHashMap<String,String>schema, HashMap<String,HashMap<String, TreeMap<String, HashSet<Integer>>>> index){
+    public synchronized void append(HashMap<String,HashMap<String,HashMap<String,String>>>cache) throws FileNotFoundException {
+        /*
+        * need to handle the case when the append can crash midway,
+        * append, BEGIN txn id and COMMIT txn id for each transaction
+        * */
+
+        FileOutputStream fos = new FileOutputStream(wal_log_path, true);
+        BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
+        try{
+            for (Map.Entry<String, HashMap<String, HashMap<String, String>>> tableEntry : cache.entrySet()) {
+                String tableName = tableEntry.getKey();
+
+                for (Map.Entry<String, HashMap<String, String>> rowEntry : tableEntry.getValue().entrySet()) {
+                    String rowId = rowEntry.getKey();
+
+                    for (Map.Entry<String, String> colEntry : rowEntry.getValue().entrySet()) {
+                        bufferedWriter.write(tableName + ":" + rowId + ":" + colEntry.getKey() + "=" + colEntry.getValue());
+                        bufferedWriter.newLine();
+                    }
+                }
+            }
+            bufferedWriter.flush();
+            fos.getFD().sync();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void replay(HashMap<String,HashMap<String,HashMap<String,String>>> cache, ConcurrentHashMap<String,String>schema, HashMap<String,HashMap<String, TreeMap<String, HashSet<Integer>>>> index){
          List<String>rowColumnData = new ArrayList<>();
          try(BufferedReader bufferedReader = new BufferedReader(new FileReader(wal_log_path))){
             String line;
