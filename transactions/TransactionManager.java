@@ -228,7 +228,7 @@ public class TransactionManager {
             throw new InvalidInputException("The column do not exists");
         }
         HashSet<Integer>rowIds = new HashSet<>();
-        if(index.containsKey(table) && index.get(table).containsKey(columnName)){
+        if(index.containsKey(table) && index.get(table).containsKey(columnName) && index.get(table).get(columnName).get(columnValue)!=null){
             rowIds = index.get(table).get(columnName).get(columnValue);
         }
         HashMap<String,HashMap<String,String>>result = mergeIntermediateAndCache(table,transaction_id);
