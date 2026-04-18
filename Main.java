@@ -2,19 +2,25 @@ import command_parser.Command;
 import command_parser.SimpleParser;
 import crash_recovery.WAL;
 import scheduler.DiskWriteScheduler;
+import schema.SchemaManager;
 import storage_engine.KeyValueStore;
 
 import java.io.FileNotFoundException;
 import java.util.HashMap;
 import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     public static void main(String[]args) throws FileNotFoundException {
         String filepath = "D:\\test";
         Scanner scanner = new Scanner(System.in);
+        AtomicInteger transactionId = new AtomicInteger(1);
 
-        KeyValueStore keyValueStore = new KeyValueStore(filepath);
-        WAL.replay(keyValueStore.getCache(),keyValueStore.getSchema(),keyValueStore.getIndex());
+        SchemaManager schemaManager = SchemaManager.getInstance();
+        WAL wal = WAL.getInstance();
+
+        KeyValueStore keyValueStore = new KeyValueStore(filepath,schemaManager.getSchema(),wal);
+        wal.replay(keyValueStore.getCache(),keyValueStore.getSchema(),keyValueStore.getIndex());
 
         DiskWriteScheduler diskWriteScheduler = new DiskWriteScheduler();
         diskWriteScheduler.schedule(keyValueStore.getCache(),filepath,keyValueStore.getSchema());

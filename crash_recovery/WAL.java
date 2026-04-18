@@ -3,29 +3,32 @@ package crash_recovery;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class WAL {
-    public final static String wal_log_path = "D:\\wal.log";
+    private static final WAL INSTANCE = new WAL();
+    public static final String wal_log_path = "D:\\wal.log";
 
-     public WAL(){
+    private WAL() {
         try {
             File file = new File(wal_log_path);
             if (file.createNewFile()) {
-                System.out.println("File created: " + file.getName());
-            } else {
-                System.out.println("File already exists");
+                System.out.println("WAL file created");
             }
-
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public void append(HashMap<String,String>columnValuePairs, String table, ConcurrentHashMap<String,Integer>rowCounter) throws FileNotFoundException {
+    public static WAL getInstance() {
+        return INSTANCE;
+    }
+
+    public synchronized void append(HashMap<String,String>columnValuePairs, String table, ConcurrentHashMap<String, AtomicInteger>rowCounter) throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(wal_log_path,true);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
 
-        int rowid = rowCounter.get(table);
+        int rowid = rowCounter.get(table).intValue();
 
         try{
             for(Map.Entry<String,String>entry:columnValuePairs.entrySet()){
@@ -41,7 +44,7 @@ public class WAL {
         }
     }
 
-    public void append(List<String>keys, List<String>values, String table, int rowid) throws FileNotFoundException {
+    public synchronized void append(List<String>keys, List<String>values, String table, int rowid) throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(wal_log_path,true);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
 
@@ -57,7 +60,7 @@ public class WAL {
         }
     }
 
-    public void append(String functionality,String tableName,String columns) throws FileNotFoundException {
+    public synchronized void append(String functionality,String tableName,String columns) throws FileNotFoundException {
         FileOutputStream fos = new FileOutputStream(wal_log_path, true);
         BufferedWriter bufferedWriter = new BufferedWriter(new OutputStreamWriter(fos));
 
