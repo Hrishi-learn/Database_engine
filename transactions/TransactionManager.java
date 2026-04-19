@@ -29,6 +29,8 @@ public class TransactionManager {
 
     WAL wal;
 
+    AtomicInteger transactionId = new AtomicInteger(0);
+
     private TransactionManager(){
         uncommittedCacheMap = new HashMap<>();
         uncommittedIndexMap = new HashMap<>();
@@ -48,11 +50,14 @@ public class TransactionManager {
         return INSTANCE;
     }
 
-    public void startTransaction(String transaction_id){
+    public String startTransaction(){
+        transactionId.incrementAndGet();
         HashMap<String,HashMap<String,HashMap<String,String>>>uncCommittedCache = new HashMap<>();
         HashMap<String,HashMap<String, TreeMap<String, HashSet<Integer>>>>uncommittedIndex = new HashMap<>();
-        uncommittedCacheMap.put(transaction_id,uncCommittedCache);
-        uncommittedIndexMap.put(transaction_id,uncommittedIndex);
+        uncommittedCacheMap.put(transactionId.toString(),uncCommittedCache);
+        uncommittedIndexMap.put(transactionId.toString(),uncommittedIndex);
+
+        return transactionId.toString();
     }
     public void insert(String transaction_id, Command command){
         String tableName = command.getTable();
@@ -146,7 +151,7 @@ public class TransactionManager {
             uncommittedCache.computeIfAbsent(tableName,val -> new HashMap<>()).computeIfAbsent(row_id,val->new HashMap<>()).put(column,"__DELETED__");
         }
     }
-    public void selectByRowId(String transaction_id,Command command){
+    public String selectByRowId(String transaction_id,Command command){
         /**
          select * from users where id = 1
          select name,age from users where id = 1
@@ -188,9 +193,11 @@ public class TransactionManager {
                 result.append(" ");
             }
         }
-        System.out.println(result.toString());
+        result.append("\n");
+        result.append("END");
+        return result.toString();
     }
-    public void selectAllRows(String transaction_id,Command command){
+    public String selectAllRows(String transaction_id,Command command){
         String table = command.getTable();
         if(!schema.containsKey(table)){
             throw new InvalidInputException("Table doesn't exists");
@@ -205,19 +212,20 @@ public class TransactionManager {
 
         HashMap<String, HashMap<String, String>> result = mergeIntermediateAndCache(table,transaction_id);
 
-
+        StringBuilder queryResult = new StringBuilder();
         for(Map.Entry<String,HashMap<String,String>>rows: result.entrySet()){
             String rowId = rows.getKey();
             HashMap<String,String>rowColumnPairs = rows.getValue();
-            System.out.print(rowId+" ");
+            queryResult.append(rowId+" ");
             for(String column:columns){
-                System.out.print(rowColumnPairs.get(column)+" ");
+                queryResult.append(rowColumnPairs.get(column)+" ");
             }
-            System.out.println();
+            queryResult.append("\n");
         }
-
+        queryResult.append("END");
+        return queryResult.toString();
     }
-    public void selectRowByColumn(String transaction_id,Command command){
+    public String selectRowByColumn(String transaction_id,Command command){
 
         String table = command.getTable();
         String columnName = command.getColumns().get(0);
@@ -249,15 +257,17 @@ public class TransactionManager {
                 rowIds.add(Integer.parseInt(rowId));
             }
         }
+        StringBuilder queryResult = new StringBuilder();
         for(Integer rowId:rowIds){
             HashMap<String,String>columnValues = result.get(rowId.toString());
             if(!columnValues.get(columnName).equals(columnValue))continue;
             for(String column:totalColumnsToQuery){
-                System.out.print(columnValues.get(column)+" ");
+                queryResult.append(columnValues.get(column)+" ");
             }
-            System.out.println();
+            queryResult.append("\n");
         }
-
+        queryResult.append("END");
+        return queryResult.toString();
     }
 
     public HashMap<String,HashMap<String,String>> mergeIntermediateAndCache(String table,String transaction_id){

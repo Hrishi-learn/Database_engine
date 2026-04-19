@@ -46,8 +46,3 @@ public class Command {
         return columns;
     }
 }
-enum CommandType {
-    INSERT, SELECT, UPDATE, DELETE,
-    CREATE,
-    BEGIN, COMMIT, ROLLBACK
-}

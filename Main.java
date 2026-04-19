@@ -1,3 +1,4 @@
+import command_parser.CONSTANTS;
 import command_parser.Command;
 import command_parser.SimpleParser;
 import crash_recovery.WAL;
@@ -99,7 +100,7 @@ public class Main {
                 }
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.BEGIN)){
                 inTransaction = true;
-                transactionManager.startTransaction(transactionId.toString());
+//                transactionManager.startTransaction(transactionId.toString());
             }else if(parts[0].equalsIgnoreCase(CONSTANTS.COMMIT)){
                 transactionManager.commit(transactionId.toString());
                 inTransaction = false;
