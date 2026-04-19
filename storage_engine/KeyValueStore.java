@@ -4,28 +4,41 @@ import command_parser.Command;
 import crash_recovery.WAL;
 import exceptions.InvalidInputException;
 import exceptions.TableNotFoundException;
+import schema.SchemaManager;
 
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class KeyValueStore {
 
-    private final String filePath;
+    private final String filePath = "D:\\test";
     HashMap<String,HashMap<String,HashMap<String,String>>>cache;
     private WAL wal;
-    ConcurrentHashMap<String,Integer>rowCounter;
-    ConcurrentHashMap<String,String>schema;
+    ConcurrentHashMap<String, AtomicInteger>rowCounter;
     HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>index;
+    ConcurrentHashMap<String,String>schema;
 
-    public KeyValueStore(String filePath){
+    private static KeyValueStore INSTANCE;
+
+    private KeyValueStore(){
         cache = new HashMap<>();
         rowCounter = new ConcurrentHashMap<>();
-        schema = new ConcurrentHashMap<>();
-        this.filePath = filePath;
-        wal = new WAL();
         index = new HashMap<>();
+        schema = SchemaManager.getInstance().getSchema();
+        wal = WAL.getInstance();
     }
+    public static void initialize() {
+        if (INSTANCE == null) {
+            INSTANCE = new KeyValueStore();
+        }
+    }
+
+    public static KeyValueStore getInstance() {
+        return INSTANCE;
+    }
+
     public void put(Command command) throws FileNotFoundException {
         // rowToBeInserted -> insert name:hrishi age:24 sex:male tableName
         // parts -> [insert, name:hrishi, age:24, sex:male, tableName]
@@ -50,26 +63,21 @@ public class KeyValueStore {
             }
         }
         // cache -> (table,{row_id,{key,value}})
-        if(rowCounter.containsKey(tableName)){
-            int rowId = rowCounter.get(tableName);
-            rowCounter.replace(tableName,rowId+1);
-        }else{
-            /*
-                rowCounter is not persistent we need to
-                iterate and find the max row value
-            */
-            HashMap<String,HashMap<String,String>>columns = cache.get(tableName);
+
+        rowCounter.computeIfAbsent(tableName, k -> {
+                // this block runs atomically only if key doesn't exist
+            HashMap<String, HashMap<String, String>> columns = cache.get(tableName);
             int maxRowId = 0;
-            if(columns!=null){
-                for(Map.Entry<String,?>entry:columns.entrySet()){
-                    String rowid = entry.getKey();
-                    maxRowId = Math.max(maxRowId,Integer.parseInt(rowid));
+            if (columns != null) {
+                for (Map.Entry<String, ?> entry : columns.entrySet()) {
+                    maxRowId = Math.max(maxRowId, Integer.parseInt(entry.getKey()));
                 }
             }
-            rowCounter.put(tableName,maxRowId+1);
-        }
+            return new AtomicInteger(maxRowId);
+        }).incrementAndGet();
+
         wal.append(columnValueMap,tableName,rowCounter);
-        int rowId = rowCounter.get(tableName);
+        AtomicInteger rowId = rowCounter.get(tableName);
 
         /*
         * updating the index table for new inserts
@@ -79,16 +87,16 @@ public class KeyValueStore {
             String value = entry.getValue();
             if(index.containsKey(tableName) && index.get(tableName).containsKey(column)){
                 TreeMap<String,HashSet<Integer>>columnIndex = index.get(tableName).get(column);
-                columnIndex.computeIfAbsent(value,val -> new HashSet<>()).add(rowId);
+                columnIndex.computeIfAbsent(value,val -> new HashSet<>()).add(rowId.intValue());
             }
         }
-        cache.computeIfAbsent(tableName,val -> new HashMap<>()).putIfAbsent(Integer.toString(rowId),columnValueMap);
+        cache.computeIfAbsent(tableName,val -> new HashMap<>()).putIfAbsent(Integer.toString(rowId.intValue()),columnValueMap);
     }
 
-    public void delete(Command commmand) throws FileNotFoundException {
+    public void delete(Command command) throws FileNotFoundException {
         //delete from table where id = ?
-        String tableName = commmand.getTable();
-        String row_id = commmand.getRowId();
+        String tableName = command.getTable();
+        String row_id = command.getRowId();
         List<String>keys = new ArrayList<>();
         List<String>values = new ArrayList<>();
 
@@ -321,7 +329,7 @@ public class KeyValueStore {
     }
 
     public HashMap<String,HashMap<String,HashMap<String,String>>>getCache(){return cache;}
-    public ConcurrentHashMap<String, Integer> getRowCounter() { return rowCounter;}
+    public ConcurrentHashMap<String, AtomicInteger> getRowCounter() { return rowCounter;}
     public ConcurrentHashMap<String, String> getSchema() {return schema;}
     public HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>> getIndex(){ return index;}
 }
