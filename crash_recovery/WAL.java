@@ -1,12 +1,14 @@
 package crash_recovery;
 
+import storage_engine.KeyValueStore;
+
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class WAL {
-    private static final WAL INSTANCE = new WAL();
+    private static WAL INSTANCE;
     public static final String wal_log_path = "D:\\wal.log";
 
     private WAL() {
@@ -17,6 +19,11 @@ public class WAL {
             }
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+    public static void initialize() {
+        if (INSTANCE == null) {
+            INSTANCE = new WAL();
         }
     }
 

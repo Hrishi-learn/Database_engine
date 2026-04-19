@@ -1,6 +1,7 @@
 package scheduler;
 
 import crash_recovery.WAL;
+import schema.SchemaManager;
 
 import java.io.*;
 import java.util.HashMap;
@@ -10,15 +11,27 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class DiskWriteScheduler {
-
+    private static DiskWriteScheduler INSTANCE;
+    private final String filePath = "D:\\test";
     private ScheduledExecutorService service;
-    public DiskWriteScheduler(){
+
+    private DiskWriteScheduler(){
         service =  Executors.newScheduledThreadPool(1);
     }
-    public void schedule(HashMap<String,HashMap<String,HashMap<String,String>>> cache, String filepath, ConcurrentHashMap<String,String>schema){
-        service.scheduleAtFixedRate(()->flush(cache,filepath,schema),300,300, TimeUnit.SECONDS);
+
+    public static void initialize() {
+        if (INSTANCE == null) {
+            INSTANCE = new DiskWriteScheduler();
+        }
     }
-    private void flush(HashMap<String,HashMap<String,HashMap<String,String>>>cache,String filepath,ConcurrentHashMap<String,String>schema){
+    public static DiskWriteScheduler getInstance() {
+        return INSTANCE;
+    }
+
+    public void schedule(HashMap<String,HashMap<String,HashMap<String,String>>> cache, ConcurrentHashMap<String,String>schema){
+        service.scheduleAtFixedRate(()->flush(cache,schema),300,300, TimeUnit.SECONDS);
+    }
+    private void flush(HashMap<String,HashMap<String,HashMap<String,String>>>cache,ConcurrentHashMap<String,String>schema){
         /*
           change pending, need to handle the case when app crashes during
           flushing from memory to OS disk.
@@ -29,7 +42,7 @@ public class DiskWriteScheduler {
           users:1:name=hrishi
           users:1:age=24
          */
-        try(BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(filepath))){
+        try(BufferedWriter bufferedWriter = new BufferedWriter(new FileWriter(filePath))){
             schema.forEach((key,value)->{
                 try {
                     bufferedWriter.write("schema"+":"+key+":"+value);

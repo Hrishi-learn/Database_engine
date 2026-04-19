@@ -18,6 +18,7 @@ public class TransactionManager {
     * uncommittedCache - {transaction_id, {table, row_id, {column,value}}}
     * uncommittedIndex - {transaction_id, {table, column, {values,{row1,row2,..}}}
     * */
+    private static TransactionManager INSTANCE;
 
     HashMap<String,HashMap<String,HashMap<String,HashMap<String,String>>>>uncommittedCacheMap;
     HashMap<String,HashMap<String,HashMap<String, TreeMap<String, HashSet<Integer>>>>>uncommittedIndexMap;
@@ -28,14 +29,23 @@ public class TransactionManager {
 
     WAL wal;
 
-    public TransactionManager(SchemaManager schemaManager, KeyValueStore kv, WAL wal){
+    private TransactionManager(){
         uncommittedCacheMap = new HashMap<>();
         uncommittedIndexMap = new HashMap<>();
-        schema = schemaManager.getSchema();
-        rowCounter = kv.getRowCounter();
-        cache = kv.getCache();
-        index = kv.getIndex();
-        this.wal = wal;
+        schema = SchemaManager.getInstance().getSchema();
+        rowCounter = KeyValueStore.getInstance().getRowCounter();
+        cache = KeyValueStore.getInstance().getCache();
+        index = KeyValueStore.getInstance().getIndex();
+        this.wal = WAL.getInstance();
+    }
+    public static void initialise(){
+        if(INSTANCE==null){
+            INSTANCE = new TransactionManager();
+        }
+    }
+
+    public static TransactionManager getInstance(){
+        return INSTANCE;
     }
 
     public void startTransaction(String transaction_id){

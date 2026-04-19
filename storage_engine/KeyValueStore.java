@@ -4,6 +4,7 @@ import command_parser.Command;
 import crash_recovery.WAL;
 import exceptions.InvalidInputException;
 import exceptions.TableNotFoundException;
+import schema.SchemaManager;
 
 import java.io.*;
 import java.util.*;
@@ -12,21 +13,32 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class KeyValueStore {
 
-    private final String filePath;
+    private final String filePath = "D:\\test";
     HashMap<String,HashMap<String,HashMap<String,String>>>cache;
     private WAL wal;
     ConcurrentHashMap<String, AtomicInteger>rowCounter;
     HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>index;
     ConcurrentHashMap<String,String>schema;
 
-    public KeyValueStore(String filePath,ConcurrentHashMap schema,WAL wal){
+    private static KeyValueStore INSTANCE;
+
+    private KeyValueStore(){
         cache = new HashMap<>();
         rowCounter = new ConcurrentHashMap<>();
-        this.schema = schema;
-        this.filePath = filePath;
-        this.wal = wal;
         index = new HashMap<>();
+        schema = SchemaManager.getInstance().getSchema();
+        wal = WAL.getInstance();
     }
+    public static void initialize() {
+        if (INSTANCE == null) {
+            INSTANCE = new KeyValueStore();
+        }
+    }
+
+    public static KeyValueStore getInstance() {
+        return INSTANCE;
+    }
+
     public void put(Command command) throws FileNotFoundException {
         // rowToBeInserted -> insert name:hrishi age:24 sex:male tableName
         // parts -> [insert, name:hrishi, age:24, sex:male, tableName]

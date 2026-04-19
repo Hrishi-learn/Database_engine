@@ -13,21 +13,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
     public static void main(String[]args) throws FileNotFoundException {
-        String filepath = "D:\\test";
         Scanner scanner = new Scanner(System.in);
         boolean inTransaction = false;
         AtomicInteger transactionId = new AtomicInteger(0);
 
-        SchemaManager schemaManager = SchemaManager.getInstance();
+        SchemaManager.initialize();
+        WAL.initialize();
+        KeyValueStore.initialize();
+        TransactionManager.initialise();
+        DiskWriteScheduler.initialize();
+
         WAL wal = WAL.getInstance();
 
-        KeyValueStore keyValueStore = new KeyValueStore(filepath,schemaManager.getSchema(),wal);
+        KeyValueStore keyValueStore = KeyValueStore.getInstance();
         wal.replay(keyValueStore.getCache(),keyValueStore.getSchema(),keyValueStore.getIndex());
 
-        TransactionManager transactionManager = new TransactionManager(schemaManager,keyValueStore,wal);
+        TransactionManager transactionManager = TransactionManager.getInstance();
 
-        DiskWriteScheduler diskWriteScheduler = new DiskWriteScheduler();
-        diskWriteScheduler.schedule(keyValueStore.getCache(),filepath,keyValueStore.getSchema());
+        DiskWriteScheduler diskWriteScheduler = DiskWriteScheduler.getInstance();
+        diskWriteScheduler.schedule(keyValueStore.getCache(),keyValueStore.getSchema());
 
         while (true){
 //            System.out.print(">");
