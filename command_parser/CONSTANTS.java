@@ -1,3 +1,5 @@
+package command_parser;
+
 public class CONSTANTS {
     public static final String SELECT  = "SELECT";
     public static final String UPDATE = "UPDATE";
