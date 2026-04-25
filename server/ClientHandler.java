@@ -2,6 +2,8 @@ package server;
 
 import command_parser.Command;
 import command_parser.SimpleParser;
+import exceptions.InvalidInputException;
+import exceptions.TableNotFoundException;
 import transactions.TransactionManager;
 
 import java.io.BufferedReader;
@@ -23,8 +25,12 @@ public class ClientHandler implements Runnable{
             PrintWriter writer = new PrintWriter(socket.getOutputStream(),true);) {
             String clientInput;
             while((clientInput=bufferedReader.readLine())!=null){
-                String output = Router.route(clientInput,session);
-                writer.println(output);
+                try{
+                    String output = Router.route(clientInput,session);
+                    writer.println(output);
+                }catch (InvalidInputException | TableNotFoundException e){
+                    writer.println(e.getMessage()+"\nEND");
+                }
             }
             if(session.isInTransaction()){
                 TransactionManager.getInstance().rollback(session.getTransactionId());
