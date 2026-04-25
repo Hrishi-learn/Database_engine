@@ -12,6 +12,7 @@ import java.io.FileNotFoundException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class TransactionManager {
     /*
@@ -27,6 +28,8 @@ public class TransactionManager {
     HashMap<String,HashMap<String,HashMap<String,String>>>cache;
     HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>index;
 
+    private final ReentrantReadWriteLock readWriteLock;
+
     WAL wal;
 
     AtomicInteger transactionId = new AtomicInteger(0);
@@ -39,6 +42,7 @@ public class TransactionManager {
         cache = KeyValueStore.getInstance().getCache();
         index = KeyValueStore.getInstance().getIndex();
         this.wal = WAL.getInstance();
+        readWriteLock = KeyValueStore.getInstance().getReadWriteLock();
     }
     public static void initialise(){
         if(INSTANCE==null){
@@ -97,14 +101,21 @@ public class TransactionManager {
          * updating the index table for new inserts
          * */
         HashMap<String, HashMap<String, TreeMap<String, HashSet<Integer>>>> uncommittedIndex = uncommittedIndexMap.get(transaction_id);
-        for(Map.Entry<String,String>entry:columnValueMap.entrySet()){
-            String column = entry.getKey();
-            String value = entry.getValue();
-            if(index.containsKey(tableName) && index.get(tableName).containsKey(column)){
-                uncommittedIndex.computeIfAbsent(tableName, val->new HashMap<>()).computeIfAbsent(column, val-> new TreeMap<>())
-                        .computeIfAbsent(value,val->new HashSet<>()).add(rowId.intValue());
+
+        readWriteLock.readLock().lock();
+        try{
+            for(Map.Entry<String,String>entry:columnValueMap.entrySet()){
+                String column = entry.getKey();
+                String value = entry.getValue();
+                if(index.containsKey(tableName) && index.get(tableName).containsKey(column)){
+                    uncommittedIndex.computeIfAbsent(tableName, val->new HashMap<>()).computeIfAbsent(column, val-> new TreeMap<>())
+                            .computeIfAbsent(value,val->new HashSet<>()).add(rowId.intValue());
+                }
             }
+        }finally {
+            readWriteLock.readLock().unlock();
         }
+
         HashMap<String,HashMap<String,HashMap<String,String>>>uncommittedCache = uncommittedCacheMap.get(transaction_id);
         uncommittedCache.computeIfAbsent(tableName,val -> new HashMap<>()).putIfAbsent(Integer.toString(rowId.intValue()),columnValueMap);
     }
@@ -118,17 +129,24 @@ public class TransactionManager {
             throw new InvalidInputException("Invalid column or table name");
         }
         HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>uncommittedIndex = uncommittedIndexMap.get(transaction_id);
-        if(uncommittedIndex.containsKey(tableName) && uncommittedIndex.get(tableName).containsKey(column)){
-            TreeMap<String,HashSet<Integer>>columnValues = uncommittedIndex.get(tableName).get(column);
-            String oldValue = cache.get(tableName).get(row_id).get(column);
-            HashSet<Integer>oldValueRowIds = columnValues.get(oldValue);
-            oldValueRowIds.remove(Integer.parseInt(row_id));
 
-            uncommittedIndex.get(tableName).get(column).computeIfAbsent(columnValue, val-> new HashSet<>()).add(Integer.parseInt(row_id));
-        }else if((index.containsKey(tableName) && index.get(tableName).containsKey(column))){
-            uncommittedIndex.computeIfAbsent(tableName, val->new HashMap<>()).computeIfAbsent(column, val-> new TreeMap<>())
-                    .computeIfAbsent(columnValue,val->new HashSet<>()).add(Integer.parseInt(row_id));
+        readWriteLock.readLock().lock();
+        try{
+            if(uncommittedIndex.containsKey(tableName) && uncommittedIndex.get(tableName).containsKey(column)){
+                TreeMap<String,HashSet<Integer>>columnValues = uncommittedIndex.get(tableName).get(column);
+                String oldValue = cache.get(tableName).get(row_id).get(column);
+                HashSet<Integer>oldValueRowIds = columnValues.get(oldValue);
+                oldValueRowIds.remove(Integer.parseInt(row_id));
+
+                uncommittedIndex.get(tableName).get(column).computeIfAbsent(columnValue, val-> new HashSet<>()).add(Integer.parseInt(row_id));
+            }else if((index.containsKey(tableName) && index.get(tableName).containsKey(column))){
+                uncommittedIndex.computeIfAbsent(tableName, val->new HashMap<>()).computeIfAbsent(column, val-> new TreeMap<>())
+                        .computeIfAbsent(columnValue,val->new HashSet<>()).add(Integer.parseInt(row_id));
+            }
+        }finally {
+            readWriteLock.readLock().unlock();
         }
+
         HashMap<String,HashMap<String,HashMap<String,String>>>uncommittedCache = uncommittedCacheMap.get(transaction_id);
         uncommittedCache.computeIfAbsent(tableName,val -> new HashMap<>()).computeIfAbsent(row_id,val->new HashMap<>()).put(column,columnValue);
     }
@@ -141,15 +159,21 @@ public class TransactionManager {
             throw new InvalidInputException("Table doesn't exists");
         }
         // cache -> (table,{row_id,{key,value}})
-        HashMap<String,String>columnValues = cache.get(tableName).get(row_id);
-        if(columnValues==null){
-            throw new InvalidInputException("Row doesn't exists");
+        readWriteLock.readLock().lock();
+        try{
+            HashMap<String,String>columnValues = cache.get(tableName).get(row_id);
+            if(columnValues==null){
+                throw new InvalidInputException("Row doesn't exists");
+            }
+            for(Map.Entry<String, String> entry:columnValues.entrySet()){
+                String column = entry.getKey();
+                HashMap<String,HashMap<String,HashMap<String,String>>>uncommittedCache = uncommittedCacheMap.get(transaction_id);
+                uncommittedCache.computeIfAbsent(tableName,val -> new HashMap<>()).computeIfAbsent(row_id,val->new HashMap<>()).put(column,"__DELETED__");
+            }
+        }finally {
+            readWriteLock.readLock().unlock();
         }
-        for(Map.Entry<String, String> entry:columnValues.entrySet()){
-            String column = entry.getKey();
-            HashMap<String,HashMap<String,HashMap<String,String>>>uncommittedCache = uncommittedCacheMap.get(transaction_id);
-            uncommittedCache.computeIfAbsent(tableName,val -> new HashMap<>()).computeIfAbsent(row_id,val->new HashMap<>()).put(column,"__DELETED__");
-        }
+
     }
     public String selectByRowId(String transaction_id,Command command){
         /**
@@ -210,20 +234,26 @@ public class TransactionManager {
             columns = command.getColumns();
         }
 
-        HashMap<String, HashMap<String, String>> result = mergeIntermediateAndCache(table,transaction_id);
+        readWriteLock.readLock().lock();
 
-        StringBuilder queryResult = new StringBuilder();
-        for(Map.Entry<String,HashMap<String,String>>rows: result.entrySet()){
-            String rowId = rows.getKey();
-            HashMap<String,String>rowColumnPairs = rows.getValue();
-            queryResult.append(rowId+" ");
-            for(String column:columns){
-                queryResult.append(rowColumnPairs.get(column)+" ");
+        try{
+            HashMap<String, HashMap<String, String>> result = mergeIntermediateAndCache(table,transaction_id);
+
+            StringBuilder queryResult = new StringBuilder();
+            for(Map.Entry<String,HashMap<String,String>>rows: result.entrySet()){
+                String rowId = rows.getKey();
+                HashMap<String,String>rowColumnPairs = rows.getValue();
+                queryResult.append(rowId+" ");
+                for(String column:columns){
+                    queryResult.append(rowColumnPairs.get(column)+" ");
+                }
+                queryResult.append("\n");
             }
-            queryResult.append("\n");
+            queryResult.append("END");
+            return queryResult.toString();
+        }finally {
+            readWriteLock.readLock().unlock();
         }
-        queryResult.append("END");
-        return queryResult.toString();
     }
     public String selectRowByColumn(String transaction_id,Command command){
 
@@ -246,28 +276,35 @@ public class TransactionManager {
             throw new InvalidInputException("The column do not exists");
         }
         HashSet<Integer>rowIds = new HashSet<>();
-        if(index.containsKey(table) && index.get(table).containsKey(columnName) && index.get(table).get(columnName).get(columnValue)!=null){
-            rowIds = index.get(table).get(columnName).get(columnValue);
-        }
-        HashMap<String,HashMap<String,String>>result = mergeIntermediateAndCache(table,transaction_id);
-        for(Map.Entry<String,HashMap<String,String>>entry:result.entrySet()){
-            String rowId = entry.getKey();
-            HashMap<String,String>columnValueMap = entry.getValue();
-            if(columnValueMap.get(columnName).equals(columnValue)){
-                rowIds.add(Integer.parseInt(rowId));
+        readWriteLock.readLock().lock();
+
+        try{
+            if(index.containsKey(table) && index.get(table).containsKey(columnName) && index.get(table).get(columnName).get(columnValue)!=null){
+                rowIds = index.get(table).get(columnName).get(columnValue);
             }
-        }
-        StringBuilder queryResult = new StringBuilder();
-        for(Integer rowId:rowIds){
-            HashMap<String,String>columnValues = result.get(rowId.toString());
-            if(!columnValues.get(columnName).equals(columnValue))continue;
-            for(String column:totalColumnsToQuery){
-                queryResult.append(columnValues.get(column)+" ");
+            HashMap<String,HashMap<String,String>>result = mergeIntermediateAndCache(table,transaction_id);
+            for(Map.Entry<String,HashMap<String,String>>entry:result.entrySet()){
+                String rowId = entry.getKey();
+                HashMap<String,String>columnValueMap = entry.getValue();
+                if(columnValueMap.get(columnName).equals(columnValue)){
+                    rowIds.add(Integer.parseInt(rowId));
+                }
             }
-            queryResult.append("\n");
+            StringBuilder queryResult = new StringBuilder();
+            for(Integer rowId:rowIds){
+                HashMap<String,String>columnValues = result.get(rowId.toString());
+                if(!columnValues.get(columnName).equals(columnValue))continue;
+                for(String column:totalColumnsToQuery){
+                    queryResult.append(columnValues.get(column)+" ");
+                }
+                queryResult.append("\n");
+            }
+            queryResult.append("END");
+            return queryResult.toString();
+        }finally {
+            readWriteLock.readLock().unlock();
         }
-        queryResult.append("END");
-        return queryResult.toString();
+
     }
 
     public HashMap<String,HashMap<String,String>> mergeIntermediateAndCache(String table,String transaction_id){
@@ -304,6 +341,19 @@ public class TransactionManager {
         HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>uncommittedIndex = uncommittedIndexMap.get(transaction_id);
         wal.append(uncommittedCache);
 
+        readWriteLock.writeLock().lock();
+        try {
+            updateIndexAndCache(uncommittedCache,uncommittedIndex);
+        }finally {
+            readWriteLock.writeLock().unlock();
+        }
+
+        uncommittedCacheMap.remove(transaction_id);
+        uncommittedIndexMap.remove(transaction_id);
+
+    }
+
+    public void updateIndexAndCache(HashMap<String,HashMap<String,HashMap<String,String>>>uncommittedCache,HashMap<String,HashMap<String,TreeMap<String,HashSet<Integer>>>>uncommittedIndex){
         for (Map.Entry<String, HashMap<String, TreeMap<String, HashSet<Integer>>>> tableEntry : uncommittedIndex.entrySet()) {
             String tableName = tableEntry.getKey();
             for (Map.Entry<String, TreeMap<String, HashSet<Integer>>> columnEntry : tableEntry.getValue().entrySet()) {
@@ -345,11 +395,8 @@ public class TransactionManager {
                 }
             }
         }
-
-        uncommittedCacheMap.remove(transaction_id);
-        uncommittedIndexMap.remove(transaction_id);
-
     }
+
     public void rollback(String transaction_id){
         uncommittedIndexMap.remove(transaction_id);
         uncommittedCacheMap.remove(transaction_id);
