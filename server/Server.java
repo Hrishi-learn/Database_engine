@@ -35,14 +35,18 @@ public class Server {
         // shutdown scheduler cleanly
         Runtime.getRuntime().addShutdownHook(new Thread(diskWriteScheduler::shutdown));
 
-        ServerSocket serverSocket = new ServerSocket(8080);
-        while(true){
-            Socket client = serverSocket.accept();
-            Session session = new Session();
-            ClientHandler clientHandler= new ClientHandler(client,session);
+        try(ServerSocket serverSocket = new ServerSocket(8080);){
+            while(true){
+                Socket client = serverSocket.accept();
+                Session session = new Session();
+                ClientHandler clientHandler= new ClientHandler(client,session);
 
-            executor.execute(clientHandler);
+                executor.execute(clientHandler);
+            }
+        }catch (IOException e){
+            System.out.println(e.getMessage());
         }
+
 
     }
 }
