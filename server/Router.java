@@ -5,6 +5,7 @@ import command_parser.Command;
 import command_parser.CommandType;
 import command_parser.SimpleParser;
 import crash_recovery.WAL;
+import exceptions.InvalidInputException;
 import storage_engine.KeyValueStore;
 import transactions.TransactionManager;
 
@@ -14,6 +15,9 @@ import java.util.HashMap;
 public class Router {
 
     public static String route(String clientInput,Session session) throws FileNotFoundException {
+        if(clientInput==null || clientInput.trim().isEmpty()){
+            throw new InvalidInputException("Input is null or empty.");
+        }
 
         String []parts = clientInput.split(" ");
         Command command = SimpleParser.parser(clientInput);
@@ -89,17 +93,29 @@ public class Router {
                 }
             }
         }else if(parts[0].equalsIgnoreCase(CONSTANTS.BEGIN)){
+            if(session.isInTransaction()){
+                throw new InvalidInputException("Nested transaction not allowed.");
+            }
             session.setInTransaction(true);
             session.setTransactionId(transactionManager.startTransaction());
             result.append("Transaction begin\nEND");
         }else if(parts[0].equalsIgnoreCase(CONSTANTS.COMMIT)){
+            if(!session.isInTransaction()){
+                throw new InvalidInputException("Cannot commit a transaction without starting it.");
+            }
             transactionManager.commit(session.getTransactionId());
             session.setInTransaction(false);
             result.append("changes committed\nEND");
         }else if(parts[0].equalsIgnoreCase(CONSTANTS.ROLLBACK)){
+            if(!session.isInTransaction()){
+                throw new InvalidInputException("Cannot rollback a transaction without starting it.");
+            }
             transactionManager.rollback(session.getTransactionId());
             session.setInTransaction(false);
             result.append("Rollbacked changes\nEND");
+        }else {
+            throw new InvalidInputException("Unknown command: " + parts[0] +
+                    ". Valid commands: insert, select, update, delete, create, begin, commit, rollback");
         }
 
         return result.toString();
