@@ -104,11 +104,11 @@ insert name:Alice age:30 city:Boston users
 
 **Update a row:**
 ```
-update from tableName where id = ?
+update tableName set col = value where id = ?
 ```
 Example:
 ```
-update from users where id = 1 name:Bob age:31
+update users set name = bob where id = 1
 ```
 
 **Delete a row:**
